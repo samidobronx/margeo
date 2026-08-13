@@ -1,49 +1,75 @@
 import React, { useMemo, useState } from "react";
 
-export default function App() {
+const EMPTY_FORM = {
+  productName: "",
+  unitPrice: "",
+  quantity: "1",
+  shipping: "",
+  customs: "",
+  vat: "",
+  otherFees: "",
+  sellingPrice: "",
+};
+
+const DEFAULT_PRODUCTS = [];
+
+function App() {
+  const [page, setPage] = useState("dashboard");
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState("");
   const [currency, setCurrency] = useState("€");
+  const [message, setMessage] = useState("");
 
-  const [form, setForm] = useState({
-    productName: "",
-    unitPrice: "",
-    quantity: "1",
-    shipping: "",
-    customs: "",
-    vat: "",
-    otherFees: "",
-    sellingPrice: "",
+  const [products, setProducts] = useState(() => {
+    try {
+      const saved = localStorage.getItem("margeo_products");
+      return saved ? JSON.parse(saved) : DEFAULT_PRODUCTS;
+    } catch {
+      return DEFAULT_PRODUCTS;
+    }
   });
-
-  const update = (field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
 
   const number = (value) => {
     const n = parseFloat(String(value).replace(",", "."));
     return Number.isFinite(n) ? n : 0;
   };
 
-  const calculations = useMemo(() => {
-    const unitPrice = number(form.unitPrice);
-    const quantity = Math.max(1, number(form.quantity));
-    const shipping = number(form.shipping);
-    const customs = number(form.customs);
-    const vat = number(form.vat);
-    const otherFees = number(form.otherFees);
-    const sellingPrice = number(form.sellingPrice);
+  const money = (value) => {
+    return `${Number(value || 0).toLocaleString("fr-FR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} ${currency}`;
+  };
+
+  const calculate = (data) => {
+    const unitPrice = number(data.unitPrice);
+    const quantity = Math.max(1, number(data.quantity));
+    const shipping = number(data.shipping);
+    const customs = number(data.customs);
+    const vat = number(data.vat);
+    const otherFees = number(data.otherFees);
+    const sellingPrice = number(data.sellingPrice);
 
     const productsTotal = unitPrice * quantity;
-    const totalCost = productsTotal + shipping + customs + vat + otherFees;
+
+    const totalCost =
+      productsTotal +
+      shipping +
+      customs +
+      vat +
+      otherFees;
+
     const costPerUnit = totalCost / quantity;
 
     const revenue = sellingPrice * quantity;
+
     const profit = revenue - totalCost;
 
     const margin =
-      sellingPrice > 0 ? (profit / revenue) * 100 : 0;
+      revenue > 0
+        ? (profit / revenue) * 100
+        : 0;
 
     const markup =
       costPerUnit > 0
@@ -60,666 +86,791 @@ export default function App() {
       margin,
       markup,
     };
+  };
+
+  const result = useMemo(() => {
+    return calculate(form);
   }, [form]);
 
-  const money = (value) =>
-    `${value.toFixed(2).replace(".", ",")} ${currency}`;
+  const saveProducts = (newProducts) => {
+    setProducts(newProducts);
 
-  const reset = () => {
-    setForm({
-      productName: "",
-      unitPrice: "",
-      quantity: "1",
-      shipping: "",
-      customs: "",
-      vat: "",
-      otherFees: "",
-      sellingPrice: "",
+    try {
+      localStorage.setItem(
+        "margeo_products",
+        JSON.stringify(newProducts)
+      );
+    } catch {
+      // Le navigateur peut bloquer localStorage.
+    }
+  };
+
+  const update = (field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  };
+
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setMessage("");
+  };
+
+  const saveProduct = () => {
+    if (!form.productName.trim()) {
+      setMessage("⚠️ Donne un nom au produit.");
+      return;
+    }
+
+    if (number(form.unitPrice) <= 0) {
+      setMessage("⚠️ Ajoute un prix d'achat.");
+      return;
+    }
+
+    if (number(form.sellingPrice) <= 0) {
+      setMessage("⚠️ Ajoute un prix de vente.");
+      return;
+    }
+
+    const calculations = calculate(form);
+
+    const product = {
+      id: editingId || Date.now(),
+      name: form.productName.trim(),
+      form: { ...form },
+      calculations,
+      updatedAt: new Date().toISOString(),
+    };
+
+    let newProducts;
+
+    if (editingId) {
+      newProducts = products.map((item) =>
+        item.id === editingId ? product : item
+      );
+
+      setMessage("✅ Produit modifié.");
+    } else {
+      newProducts = [product, ...products];
+
+      setMessage("✅ Produit enregistré.");
+    }
+
+    saveProducts(newProducts);
+
+    setEditingId(null);
+
+    setTimeout(() => {
+      setMessage("");
+    }, 2500);
+  };
+
+  const editProduct = (product) => {
+    setForm(product.form);
+    setEditingId(product.id);
+    setPage("calculator");
+    setMessage("Modification du produit.");
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
     });
   };
 
+  const deleteProduct = (id) => {
+    const confirmed = window.confirm(
+      "Supprimer définitivement ce produit ?"
+    );
+
+    if (!confirmed) return;
+
+    saveProducts(
+      products.filter((product) => product.id !== id)
+    );
+  };
+
+  const filteredProducts = products.filter((product) =>
+    product.name
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
+
+  const dashboardStats = useMemo(() => {
+    if (products.length === 0) {
+      return {
+        products: 0,
+        revenue: 0,
+        profit: 0,
+        margin: 0,
+      };
+    }
+
+    const revenue = products.reduce(
+      (sum, product) =>
+        sum + product.calculations.revenue,
+      0
+    );
+
+    const profit = products.reduce(
+      (sum, product) =>
+        sum + product.calculations.profit,
+      0
+    );
+
+    return {
+      products: products.length,
+      revenue,
+      profit,
+      margin: revenue > 0
+        ? (profit / revenue) * 100
+        : 0,
+    };
+  }, [products]);
+
+  const openCalculator = () => {
+    resetForm();
+    setPage("calculator");
+  };
+
   return (
-    <div style={styles.page}>
-      <header style={styles.header}>
+    <>
+      <style>{css}</style>
+
+      <div className="app">
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brandLogo">M</div>
+
+            <div>
+              <div className="brandName">Margeo</div>
+              <div className="brandSub">
+                Rentabilité simplifiée
+              </div>
+            </div>
+          </div>
+
+          <nav className="navigation">
+            <NavButton
+              icon="⌂"
+              label="Dashboard"
+              active={page === "dashboard"}
+              onClick={() => setPage("dashboard")}
+            />
+
+            <NavButton
+              icon="▣"
+              label="Calculateur"
+              active={page === "calculator"}
+              onClick={openCalculator}
+            />
+
+            <NavButton
+              icon="◆"
+              label="Produits"
+              active={page === "products"}
+              onClick={() => setPage("products")}
+            />
+
+            <NavButton
+              icon="◷"
+              label="Historique"
+              active={page === "history"}
+              onClick={() => setPage("history")}
+            />
+          </nav>
+
+          <div className="sidebarBottom">
+            <div className="premiumBox">
+              <div className="premiumIcon">♛</div>
+
+              <strong>Margeo Premium</strong>
+
+              <p>
+                Plus tard, cette zone servira à présenter
+                les fonctionnalités payantes.
+              </p>
+
+              <button>
+                Bientôt disponible
+              </button>
+            </div>
+
+            <div className="sidebarFooter">
+              <span>V1</span>
+              <span>© 2026 Margeo</span>
+            </div>
+          </div>
+        </aside>
+
+        <main className="main">
+          <header className="topbar">
+            <div>
+              <h1>
+                {page === "dashboard" && "Dashboard"}
+                {page === "calculator" && "Calculateur"}
+                {page === "products" && "Mes produits"}
+                {page === "history" && "Historique"}
+              </h1>
+
+              <p>
+                {page === "dashboard" &&
+                  "Vue d'ensemble de ta rentabilité"}
+                {page === "calculator" &&
+                  "Calcule précisément ton coût et ta marge"}
+                {page === "products" &&
+                  "Gère tous tes produits enregistrés"}
+                {page === "history" &&
+                  "Retrouve tes derniers calculs"}
+              </p>
+            </div>
+
+            <div className="topRight">
+              <select
+                value={currency}
+                onChange={(e) =>
+                  setCurrency(e.target.value)
+                }
+                className="currencySelect"
+              >
+                <option value="€">EUR €</option>
+                <option value="$">USD $</option>
+                <option value="£">GBP £</option>
+              </select>
+
+              <div className="userAvatar">
+                M
+              </div>
+            </div>
+          </header>
+
+          {page === "dashboard" && (
+            <Dashboard
+              stats={dashboardStats}
+              products={products}
+              money={money}
+              onCalculator={openCalculator}
+              onProducts={() => setPage("products")}
+              onEdit={editProduct}
+            />
+          )}
+
+          {page === "calculator" && (
+            <Calculator
+              form={form}
+              update={update}
+              result={result}
+              money={money}
+              saveProduct={saveProduct}
+              reset={resetForm}
+              editing={Boolean(editingId)}
+              message={message}
+            />
+          )}
+
+          {page === "products" && (
+            <Products
+              products={filteredProducts}
+              search={search}
+              setSearch={setSearch}
+              money={money}
+              onEdit={editProduct}
+              onDelete={deleteProduct}
+              onNew={openCalculator}
+            />
+          )}
+
+          {page === "history" && (
+            <History
+              products={products}
+              money={money}
+              onEdit={editProduct}
+            />
+          )}
+        </main>
+      </div>
+    </>
+  );
+}
+
+function NavButton({
+  icon,
+  label,
+  active,
+  onClick,
+}) {
+  return (
+    <button
+      className={`navButton ${active ? "active" : ""}`}
+      onClick={onClick}
+    >
+      <span>{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+function Dashboard({
+  stats,
+  products,
+  money,
+  onCalculator,
+  onProducts,
+  onEdit,
+}) {
+  const recent = products.slice(0, 5);
+
+  return (
+    <div>
+      <section className="statsGrid">
+        <StatCard
+          icon="📦"
+          label="PRODUITS"
+          value={stats.products}
+          detail="produits enregistrés"
+        />
+
+        <StatCard
+          icon="💰"
+          label="CA POTENTIEL"
+          value={money(stats.revenue)}
+          detail="sur tes produits"
+        />
+
+        <StatCard
+          icon="📈"
+          label="BÉNÉFICE"
+          value={money(stats.profit)}
+          detail="bénéfice potentiel"
+          green={stats.profit >= 0}
+        />
+
+        <StatCard
+          icon="◔"
+          label="MARGE MOYENNE"
+          value={`${stats.margin.toFixed(1)} %`}
+          detail="marge globale"
+          green={stats.margin >= 0}
+        />
+      </section>
+
+      <section className="dashboardHero">
         <div>
-          <div style={styles.logo}>Margeo</div>
-          <div style={styles.subtitle}>
-            Calculateur de coûts & de marge
-          </div>
+          <span className="heroSmall">
+            TON ESPACE MAR G E O
+          </span>
+
+          <h2>
+            Maîtrise tes marges.
+            <br />
+            Protège tes bénéfices.
+          </h2>
+
+          <p>
+            Enregistre tes produits et garde une vision
+            claire de leur rentabilité.
+          </p>
         </div>
 
-        <select
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          style={styles.currency}
+        <button
+          className="primaryButton"
+          onClick={onCalculator}
         >
-          <option value="€">EUR €</option>
-          <option value="$">USD $</option>
-          <option value="£">GBP £</option>
-        </select>
-      </header>
+          + Nouveau calcul
+        </button>
+      </section>
 
-      <main style={styles.container}>
-        <section style={styles.hero}>
-          <div>
-            <span style={styles.badge}>V1</span>
-            <h1 style={styles.title}>
-              Calcule ta vraie marge
-            </h1>
-            <p style={styles.heroText}>
-              Prends en compte le prix d'achat, la livraison,
-              les douanes et les autres frais.
-            </p>
-          </div>
-        </section>
-
-        <div style={styles.grid}>
-          {/* PRODUIT */}
-          <section style={styles.card}>
-            <div style={styles.cardHeader}>
-              <div style={styles.icon}>📦</div>
-              <div>
-                <h2 style={styles.cardTitle}>Produit</h2>
-                <p style={styles.cardDescription}>
-                  Informations sur ton achat
-                </p>
-              </div>
-            </div>
-
-            <Field
-              label="Nom du produit"
-              placeholder="Ex : T-shirt Nike"
-              value={form.productName}
-              onChange={(v) => update("productName", v)}
-            />
-
-            <div style={styles.twoColumns}>
-              <Field
-                label="Prix unitaire"
-                placeholder="0,00"
-                type="number"
-                value={form.unitPrice}
-                onChange={(v) => update("unitPrice", v)}
-              />
-
-              <Field
-                label="Quantité"
-                placeholder="1"
-                type="number"
-                value={form.quantity}
-                onChange={(v) => update("quantity", v)}
-              />
-            </div>
-
-            <div style={styles.infoBox}>
-              <span>Prix total des produits</span>
-              <strong>
-                {money(calculations.productsTotal)}
-              </strong>
-            </div>
-          </section>
-
-          {/* FRAIS */}
-          <section style={styles.card}>
-            <div style={styles.cardHeader}>
-              <div style={styles.icon}>💳</div>
-              <div>
-                <h2 style={styles.cardTitle}>Frais</h2>
-                <p style={styles.cardDescription}>
-                  Tous les coûts supplémentaires
-                </p>
-              </div>
-            </div>
-
-            <Field
-              label="Frais de livraison"
-              placeholder="0,00"
-              type="number"
-              value={form.shipping}
-              onChange={(v) => update("shipping", v)}
-              suffix={currency}
-            />
-
-            <Field
-              label="Frais de douane"
-              placeholder="0,00"
-              type="number"
-              value={form.customs}
-              onChange={(v) => update("customs", v)}
-              suffix={currency}
-            />
-
-            <Field
-              label="TVA / taxes"
-              placeholder="0,00"
-              type="number"
-              value={form.vat}
-              onChange={(v) => update("vat", v)}
-              suffix={currency}
-            />
-
-            <Field
-              label="Autres frais"
-              placeholder="0,00"
-              type="number"
-              value={form.otherFees}
-              onChange={(v) => update("otherFees", v)}
-              suffix={currency}
-            />
-          </section>
-
-          {/* VENTE */}
-          <section style={styles.card}>
-            <div style={styles.cardHeader}>
-              <div style={styles.icon}>🏷️</div>
-              <div>
-                <h2 style={styles.cardTitle}>Vente</h2>
-                <p style={styles.cardDescription}>
-                  Définis ton prix de vente
-                </p>
-              </div>
-            </div>
-
-            <Field
-              label="Prix de vente unitaire"
-              placeholder="0,00"
-              type="number"
-              value={form.sellingPrice}
-              onChange={(v) => update("sellingPrice", v)}
-              suffix={currency}
-            />
-
-            <div style={styles.priceSuggestion}>
-              <div>
-                <span style={styles.smallLabel}>
-                  Coût réel par unité
-                </span>
-                <strong style={styles.bigNumber}>
-                  {money(calculations.costPerUnit)}
-                </strong>
-              </div>
-
-              <div style={styles.arrow}>→</div>
-
-              <div>
-                <span style={styles.smallLabel}>
-                  Prix de vente
-                </span>
-                <strong style={styles.bigNumber}>
-                  {money(number(form.sellingPrice))}
-                </strong>
-              </div>
-            </div>
-          </section>
-
-          {/* RESULTATS */}
-          <section style={{ ...styles.card, ...styles.resultCard }}>
-            <div style={styles.cardHeader}>
-              <div style={styles.icon}>📊</div>
-              <div>
-                <h2 style={styles.cardTitle}>Résultats</h2>
-                <p style={styles.cardDescription}>
-                  Ta rentabilité en un coup d'œil
-                </p>
-              </div>
-            </div>
-
-            <div style={styles.resultsGrid}>
-              <Result
-                label="Coût total"
-                value={money(calculations.totalCost)}
-              />
-
-              <Result
-                label="Coût par unité"
-                value={money(calculations.costPerUnit)}
-              />
-
-              <Result
-                label="Chiffre d'affaires"
-                value={money(calculations.revenue)}
-              />
-
-              <Result
-                label="Bénéfice total"
-                value={money(calculations.profit)}
-                highlight
-              />
-            </div>
-
-            <div style={styles.marginBox}>
-              <div>
-                <span style={styles.marginLabel}>
-                  Marge
-                </span>
-                <strong style={styles.marginValue}>
-                  {calculations.margin.toFixed(1)} %
-                </strong>
-              </div>
-
-              <div>
-                <span style={styles.marginLabel}>
-                  Taux de marque
-                </span>
-                <strong style={styles.marginValue}>
-                  {calculations.margin.toFixed(1)} %
-                </strong>
-              </div>
-
-              <div>
-                <span style={styles.marginLabel}>
-                  Taux de marge
-                </span>
-                <strong style={styles.marginValue}>
-                  {calculations.markup.toFixed(1)} %
-                </strong>
-              </div>
-            </div>
-          </section>
+      <section className="sectionHeader">
+        <div>
+          <h2>Produits récents</h2>
+          <p>
+            Les derniers produits que tu as enregistrés.
+          </p>
         </div>
 
-        <section style={styles.summary}>
-          <div>
-            <span style={styles.summaryLabel}>
-              {form.productName || "Ton produit"}
-            </span>
-            <strong style={styles.summaryTitle}>
-              Résumé de l'opération
-            </strong>
-          </div>
-
-          <div style={styles.summaryStats}>
-            <div>
-              <span>Quantité</span>
-              <strong>{calculations.quantity}</strong>
-            </div>
-
-            <div>
-              <span>Coût total</span>
-              <strong>{money(calculations.totalCost)}</strong>
-            </div>
-
-            <div>
-              <span>Bénéfice</span>
-              <strong>{money(calculations.profit)}</strong>
-            </div>
-          </div>
-        </section>
-
-        <button onClick={reset} style={styles.resetButton}>
-          ↻ Réinitialiser le calcul
+        <button
+          className="linkButton"
+          onClick={onProducts}
+        >
+          Voir tous les produits →
         </button>
-      </main>
+      </section>
 
-      <footer style={styles.footer}>
-        Margeo · Calculateur de marge · V1
-      </footer>
+      {recent.length === 0 ? (
+        <EmptyProducts onClick={onCalculator} />
+      ) : (
+        <div className="productGrid">
+          {recent.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              money={money}
+              onEdit={onEdit}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function Field({
-  label,
-  placeholder,
-  value,
-  onChange,
-  type = "text",
-  suffix,
+function Calculator({
+  form,
+  update,
+  result,
+  money,
+  saveProduct,
+  reset,
+  editing,
+  message,
 }) {
   return (
-    <div style={styles.field}>
-      <label style={styles.label}>{label}</label>
+    <div>
+      <div className="calculatorTop">
+        <div>
+          <h2>
+            {editing
+              ? "Modifier le produit"
+              : "Nouveau calcul"}
+          </h2>
 
-      <div style={styles.inputWrapper}>
-        <input
-          type={type}
-          value={value}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          style={styles.input}
-          min={type === "number" ? "0" : undefined}
-          step={type === "number" ? "0.01" : undefined}
-        />
+          <p>
+            Renseigne tous les coûts pour obtenir ta
+            vraie rentabilité.
+          </p>
+        </div>
 
-        {suffix && (
-          <span style={styles.suffix}>{suffix}</span>
-        )}
+        <button
+          className="secondaryButton"
+          onClick={reset}
+        >
+          ↻ Réinitialiser
+        </button>
+      </div>
+
+      {message && (
+        <div className="message">
+          {message}
+        </div>
+      )}
+
+      <div className="calculatorLayout">
+        <div>
+          <Card title="Produit" icon="📦">
+            <Field
+              label="Nom du produit"
+              value={form.productName}
+              placeholder="Ex : T-shirt Nike"
+              onChange={(v) =>
+                update("productName", v)
+              }
+            />
+
+            <div className="twoColumns">
+              <Field
+                label="Prix d'achat unitaire"
+                value={form.unitPrice}
+                placeholder="0,00"
+                type="number"
+                suffix="€"
+                onChange={(v) =>
+                  update("unitPrice", v)
+                }
+              />
+
+              <Field
+                label="Quantité"
+                value={form.quantity}
+                placeholder="1"
+                type="number"
+                suffix="pcs"
+                onChange={(v) =>
+                  update("quantity", v)
+                }
+              />
+            </div>
+          </Card>
+
+          <Card title="Import & frais" icon="🚚">
+            <div className="twoColumns">
+              <Field
+                label="Livraison"
+                value={form.shipping}
+                placeholder="0,00"
+                type="number"
+                suffix="€"
+                onChange={(v) =>
+                  update("shipping", v)
+                }
+              />
+
+              <Field
+                label="Douane"
+                value={form.customs}
+                placeholder="0,00"
+                type="number"
+                suffix="€"
+                onChange={(v) =>
+                  update("customs", v)
+                }
+              />
+            </div>
+
+            <div className="twoColumns">
+              <Field
+                label="TVA / taxes"
+                value={form.vat}
+                placeholder="0,00"
+                type="number"
+                suffix="€"
+                onChange={(v) =>
+                  update("vat", v)
+                }
+              />
+
+              <Field
+                label="Autres frais"
+                value={form.otherFees}
+                placeholder="0,00"
+                type="number"
+                suffix="€"
+                onChange={(v) =>
+                  update("otherFees", v)
+                }
+              />
+            </div>
+          </Card>
+
+          <Card title="Prix de vente" icon="🏷️">
+            <Field
+              label="Prix de vente unitaire"
+              value={form.sellingPrice}
+              placeholder="0,00"
+              type="number"
+              suffix="€"
+              onChange={(v) =>
+                update("sellingPrice", v)
+              }
+            />
+          </Card>
+
+          <button
+            className="saveButton"
+            onClick={saveProduct}
+          >
+            {editing
+              ? "✓ Enregistrer les modifications"
+              : "✓ Enregistrer le produit"}
+          </button>
+        </div>
+
+        <div>
+          <ResultPanel
+            result={result}
+            money={money}
+          />
+
+          <div className="calculationInfo">
+            <strong>Comment Margeo calcule ?</strong>
+
+            <p>
+              Coût des produits + livraison + douane +
+              TVA + autres frais = coût total.
+            </p>
+
+            <p>
+              Chiffre d'affaires − coût total =
+              bénéfice.
+            </p>
+
+            <p>
+              Bénéfice ÷ chiffre d'affaires × 100 =
+              marge.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function Result({ label, value, highlight }) {
+function Products({
+  products,
+  search,
+  setSearch,
+  money,
+  onEdit,
+  onDelete,
+  onNew,
+}) {
   return (
-    <div
-      style={{
-        ...styles.result,
-        ...(highlight ? styles.highlightResult : {}),
-      }}
-    >
-      <span style={styles.resultLabel}>{label}</span>
-      <strong style={styles.resultValue}>{value}</strong>
+    <div>
+      <div className="productsHeader">
+        <div>
+          <h2>Mes produits</h2>
+          <p>
+            Tous tes produits enregistrés sont stockés
+            dans ce navigateur.
+          </p>
+        </div>
+
+        <button
+          className="primaryButton"
+          onClick={onNew}
+        >
+          + Ajouter un produit
+        </button>
+      </div>
+
+      <div className="searchBox">
+        🔎
+        <input
+          value={search}
+          onChange={(e) =>
+            setSearch(e.target.value)
+          }
+          placeholder="Rechercher un produit..."
+        />
+      </div>
+
+      {products.length === 0 ? (
+        <EmptyProducts onClick={onNew} />
+      ) : (
+        <div className="productList">
+          {products.map((product) => (
+            <ProductRow
+              key={product.id}
+              product={product}
+              money={money}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
-    color: "#172033",
-    fontFamily:
-      "Inter, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-  },
+function History({
+  products,
+  money,
+  onEdit,
+}) {
+  return (
+    <div>
+      <div className="productsHeader">
+        <div>
+          <h2>Historique</h2>
+          <p>
+            Voici les calculs enregistrés dans Margeo.
+          </p>
+        </div>
+      </div>
 
-  header: {
-    background: "#ffffff",
-    borderBottom: "1px solid #e5e7eb",
-    padding: "18px 24px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
-  },
+      {products.length === 0 ? (
+        <div className="empty">
+          <div className="emptyIcon">◷</div>
+          <h3>Aucun calcul</h3>
+          <p>
+            Tes calculs apparaîtront ici après avoir
+            enregistré des produits.
+          </p>
+        </div>
+      ) : (
+        <div className="historyList">
+          {products.map((product) => (
+            <button
+              key={product.id}
+              className="historyRow"
+              onClick={() => onEdit(product)}
+            >
+              <div className="historyIcon">
+                📊
+              </div>
 
-  logo: {
-    fontSize: "25px",
-    fontWeight: 800,
-    letterSpacing: "-1px",
-  },
+              <div className="historyInfo">
+                <strong>{product.name}</strong>
+                <span>
+                  {product.form.quantity} unités
+                  {" · "}
+                  Prix de vente{" "}
+                  {money(
+                    numberSafe(
+                      product.form.sellingPrice
+                    )
+                  )}
+                </span>
+              </div>
 
-  subtitle: {
-    color: "#718096",
-    fontSize: "13px",
-    marginTop: "2px",
-  },
+              <div
+                className={
+                  product.calculations.profit >= 0
+                    ? "profitPositive"
+                    : "profitNegative"
+                }
+              >
+                {money(product.calculations.profit)}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-  currency: {
-    border: "1px solid #d9dee8",
-    background: "#ffffff",
-    borderRadius: "10px",
-    padding: "10px 12px",
-    fontSize: "14px",
-    fontWeight: 600,
-    outline: "none",
-  },
+function ProductCard({
+  product,
+  money,
+  onEdit,
+}) {
+  const calculation = product.calculations;
 
-  container: {
-    maxWidth: "1100px",
-    margin: "0 auto",
-    padding: "28px 18px 50px",
-  },
+  return (
+    <div className="productCard">
+      <div className="productCardTop">
+        <div className="productEmoji">
+          📦
+        </div>
 
-  hero: {
-    background:
-      "linear-gradient(135deg, #111827 0%, #263449 100%)",
-    borderRadius: "22px",
-    padding: "32px",
-    color: "#ffffff",
-    marginBottom: "22px",
-    boxShadow: "0 15px 40px rgba(15,23,42,0.12)",
-  },
+        <span
+          className={
+            calculation.margin >= 30
+              ? "marginBadge good"
+              : calculation.margin >= 0
+              ? "marginBadge medium"
+              : "marginBadge bad"
+          }
+        >
+          {calculation.margin.toFixed(1)} %
+        </span>
+      </div>
 
-  badge: {
-    display: "inline-block",
-    padding: "5px 10px",
-    borderRadius: "999px",
-    background: "rgba(255,255,255,0.12)",
-    fontSize: "12px",
-    fontWeight: 700,
-    marginBottom: "12px",
-  },
+      <h3>{product.name}</h3>
 
-  title: {
-    margin: 0,
-    fontSize: "clamp(28px, 5vw, 42px)",
-    letterSpacing: "-1.5px",
-  },
+      <div className="productDetails">
+        <div>
+          <span>Coût / unité</span>
+          <strong>
+            {money(calculation.costPerUnit)}
+          </strong>
+        </div>
 
-  heroText: {
-    margin: "10px 0 0",
-    color: "#cbd5e1",
-    fontSize: "15px",
-    lineHeight: 1.6,
-    maxWidth: "650px",
-  },
+        <div>
+          <span>Prix vente</span>
+          <strong>
+            {money(
+              numberSafe(
+                product.form.sellingPrice
+              )
+            )}
+          </strong>
+        </div>
 
-  grid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(auto-fit, minmax(300px, 1fr))",
-    gap: "18px",
-  },
-
-  card: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "18px",
-    padding: "22px",
-    boxShadow: "0 8px 25px rgba(15,23,42,0.05)",
-  },
-
-  resultCard: {
-    gridColumn: "span 1",
-  },
-
-  cardHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "20px",
-  },
-
-  icon: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "12px",
-    background: "#f1f5f9",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "20px",
-  },
-
-  cardTitle: {
-    margin: 0,
-    fontSize: "18px",
-    fontWeight: 750,
-  },
-
-  cardDescription: {
-    margin: "3px 0 0",
-    color: "#7b8494",
-    fontSize: "12px",
-  },
-
-  field: {
-    marginBottom: "16px",
-  },
-
-  label: {
-    display: "block",
-    fontSize: "13px",
-    fontWeight: 650,
-    marginBottom: "7px",
-    color: "#374151",
-  },
-
-  inputWrapper: {
-    display: "flex",
-    alignItems: "center",
-    border: "1px solid #d9dee8",
-    borderRadius: "10px",
-    background: "#ffffff",
-    overflow: "hidden",
-  },
-
-  input: {
-    width: "100%",
-    minWidth: 0,
-    border: 0,
-    outline: 0,
-    padding: "12px",
-    fontSize: "15px",
-    background: "transparent",
-    color: "#172033",
-    boxSizing: "border-box",
-  },
-
-  suffix: {
-    paddingRight: "12px",
-    color: "#7b8494",
-    fontWeight: 600,
-    fontSize: "13px",
-  },
-
-  twoColumns: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
-  },
-
-  infoBox: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    background: "#f8fafc",
-    borderRadius: "10px",
-    padding: "13px",
-    fontSize: "13px",
-    color: "#64748b",
-  },
-
-  priceSuggestion: {
-    background: "#f8fafc",
-    borderRadius: "14px",
-    padding: "16px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "10px",
-  },
-
-  smallLabel: {
-    display: "block",
-    fontSize: "11px",
-    color: "#7b8494",
-    marginBottom: "4px",
-  },
-
-  bigNumber: {
-    fontSize: "18px",
-  },
-
-  arrow: {
-    fontSize: "22px",
-    color: "#94a3b8",
-  },
-
-  resultsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "10px",
-  },
-
-  result: {
-    background: "#f8fafc",
-    borderRadius: "12px",
-    padding: "14px",
-  },
-
-  highlightResult: {
-    background: "#ecfdf5",
-  },
-
-  resultLabel: {
-    display: "block",
-    color: "#718096",
-    fontSize: "11px",
-    marginBottom: "5px",
-  },
-
-  resultValue: {
-    fontSize: "17px",
-  },
-
-  marginBox: {
-    marginTop: "14px",
-    padding: "16px",
-    borderRadius: "14px",
-    background: "#111827",
-    color: "#ffffff",
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "10px",
-  },
-
-  marginLabel: {
-    display: "block",
-    color: "#9ca3af",
-    fontSize: "10px",
-    marginBottom: "4px",
-  },
-
-  marginValue: {
-    fontSize: "18px",
-  },
-
-  summary: {
-    marginTop: "20px",
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "18px",
-    padding: "22px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "20px",
-    flexWrap: "wrap",
-  },
-
-  summaryLabel: {
-    display: "block",
-    color: "#7b8494",
-    fontSize: "12px",
-    marginBottom: "4px",
-  },
-
-  summaryTitle: {
-    fontSize: "18px",
-  },
-
-  summaryStats: {
-    display: "flex",
-    gap: "25px",
-    flexWrap: "wrap",
-  },
-
-  summaryStatsItem: {
-    display: "flex",
-    flexDirection: "column",
-  },
-
-  resetButton: {
-    marginTop: "18px",
-    width: "100%",
-    border: "1px solid #d9dee8",
-    background: "#ffffff",
-    color: "#374151",
-    borderRadius: "12px",
-    padding: "13px",
-    fontSize: "14px",
-    fontWeight: 650,
-    cursor: "pointer",
-  },
-
-  footer: {
-    textAlign: "center",
-    padding: "25px",
-    color: "#8a94a6",
-    fontSize: "12px",
-  },
-};
+        <div>
+          <span>Bénéfice</span>
+          <strong>
+            {money(calculation.profit)}
+          </strong>
+    </
