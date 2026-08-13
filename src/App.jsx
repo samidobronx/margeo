@@ -18,7 +18,9 @@ export default function App() {
     <div style={styles.page}>
       <div style={styles.container}>
         <h1 style={styles.title}>Margeo</h1>
-        <p style={styles.subtitle}>Calculateur de marge simple et rapide</p>
+        <p style={styles.subtitle}>
+          Calculateur de marge simple et rapide
+        </p>
 
         <div style={styles.card}>
           <label style={styles.label}>Prix d'achat (€)</label>
@@ -42,3 +44,141 @@ export default function App() {
           />
 
           <label style={styles.label}>Quantité</label>
+          <input
+            style={styles.input}
+            type="number"
+            min="1"
+            value={quantite}
+            onChange={(e) => setQuantite(e.target.value)}
+          />
+        </div>
+
+        <div style={styles.resultCard}>
+          <div style={styles.mainResult}>
+            <span>Marge totale</span>
+            <strong style={styles.bigNumber}>
+              {margeTotale.toFixed(2)} €
+            </strong>
+          </div>
+
+          <div style={styles.results}>
+            <div style={styles.result}>
+              <span>Marge unitaire</span>
+              <strong>{margeUnitaire.toFixed(2)} €</strong>
+            </div>
+
+            <div style={styles.result}>
+              <span>Taux de marge</span>
+              <strong>{tauxMarge.toFixed(1)} %</strong>
+            </div>
+
+            <div style={styles.result}>
+              <span>Taux de marque</span>
+              <strong>{tauxMarque.toFixed(1)} %</strong>
+            </div>
+          </div>
+        </div>
+
+        <p style={styles.formula}>
+          Marge = Prix de vente − Prix d'achat
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "#f5f7fb",
+    padding: "30px 16px",
+    boxSizing: "border-box",
+    fontFamily: "Arial, Helvetica, sans-serif",
+  },
+
+  container: {
+    maxWidth: "600px",
+    margin: "0 auto",
+  },
+
+  title: {
+    textAlign: "center",
+    fontSize: "42px",
+    margin: "10px 0 5px",
+    color: "#111827",
+  },
+
+  subtitle: {
+    textAlign: "center",
+    color: "#6b7280",
+    marginBottom: "30px",
+    fontSize: "16px",
+  },
+
+  card: {
+    background: "#ffffff",
+    padding: "24px",
+    borderRadius: "18px",
+    boxShadow: "0 8px 25px rgba(0,0,0,0.08)",
+  },
+
+  label: {
+    display: "block",
+    marginBottom: "8px",
+    marginTop: "16px",
+    fontWeight: "600",
+    color: "#374151",
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "14px",
+    borderRadius: "10px",
+    border: "1px solid #d1d5db",
+    fontSize: "17px",
+  },
+
+  resultCard: {
+    marginTop: "20px",
+    background: "#111827",
+    color: "white",
+    padding: "24px",
+    borderRadius: "18px",
+  },
+
+  mainResult: {
+    textAlign: "center",
+    paddingBottom: "20px",
+    borderBottom: "1px solid #374151",
+  },
+
+  bigNumber: {
+    display: "block",
+    fontSize: "32px",
+    marginTop: "8px",
+  },
+
+  results: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: "15px",
+    marginTop: "20px",
+  },
+
+  result: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    background: "#1f2937",
+    padding: "15px",
+    borderRadius: "10px",
+  },
+
+  formula: {
+    textAlign: "center",
+    color: "#6b7280",
+    fontSize: "14px",
+    marginTop: "20px",
+  },
+};
