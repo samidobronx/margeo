@@ -41,4 +41,4 @@ export default function App() {
             onChange={(e) => setPrixVente(e.target.value)}
           />
 
-          <label style={styles.label}>Quantité
+          <label style={styles.label}>Quantité</label>
